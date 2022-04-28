@@ -2,6 +2,7 @@ package io.featurehub.mr.resources;
 
 import cd.connect.app.config.ConfigKey;
 import cd.connect.app.config.DeclaredConfigResolver;
+import io.featurehub.db.api.CreatedServicePerson;
 import io.featurehub.db.api.FillOpts;
 import io.featurehub.db.api.GroupApi;
 import io.featurehub.db.api.OptimisticLockingException;
@@ -13,6 +14,7 @@ import io.featurehub.mr.auth.AuthManagerService;
 import io.featurehub.mr.model.CreatePersonDetails;
 import io.featurehub.mr.model.OutstandingRegistration;
 import io.featurehub.mr.model.Person;
+import io.featurehub.mr.model.PersonType;
 import io.featurehub.mr.model.RegistrationUrl;
 import io.featurehub.mr.model.SearchPersonResult;
 import jakarta.inject.Inject;
@@ -25,7 +27,9 @@ import jakarta.ws.rs.core.SecurityContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashSet;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -53,6 +57,29 @@ public class PersonResource implements PersonServiceDelegate {
     Person currentUser = authManager.from(securityContext);
 
     if (authManager.isAnyAdmin(currentUser.getId().getId())) {
+
+      if (createPersonDetails.getPersonType() == PersonType.SERVICEACCOUNT) {
+        final CreatedServicePerson servicePerson = personApi.createServicePerson(createPersonDetails.getName(),
+          currentUser.getId().getId());
+
+        if (servicePerson == null) {
+          throw new BadRequestException();
+        }
+
+        if (createPersonDetails.getGroupIds() != null) {
+          createPersonDetails.getGroupIds().forEach(id -> {
+          //add user to the groups
+            groupApi.addPersonToGroup(id, servicePerson.getPerson().getId().getId(), Opts.empty());
+          });
+        }
+
+        //return registration url
+        RegistrationUrl regUrl = new RegistrationUrl();
+        // hard code the return value, it will be ignored by the client from now on
+        regUrl.setToken(servicePerson.getToken());
+        return regUrl;
+      }
+
       //create new user in the db
       try {
         PersonApi.PersonToken person = personApi.create(createPersonDetails.getEmail(),
@@ -144,6 +171,7 @@ public class PersonResource implements PersonServiceDelegate {
       int page = holder.pageSize == null ? 20 : holder.pageSize;
 
       PersonApi.PersonPagination pp = personApi.search(holder.filter, holder.order, start, page,
+        holder.personTypes == null ? Set.of(PersonType.PERSON) : new HashSet<>(holder.personTypes),
         new Opts().add(FillOpts.Groups, holder.includeGroups).add(FillOpts.PersonLastLoggedIn, holder.includeLastLoggedIn));
 
       return new SearchPersonResult()
