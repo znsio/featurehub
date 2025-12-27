@@ -14,7 +14,7 @@ jobs:
     name: docs
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v6
       - name: "Generate site using antora site action"
         uses: bfranske/antora-site-action@master
         with:
